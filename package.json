@@ -41,7 +41,7 @@
     "jsonwebtoken":    "^9.0.3",
     "multer":          "^2.1.1",
     "node-fetch":      "^3.3.2",
-    "uuid":            "^13.0.0"
+    "uuid":            "^14.0.0"
   },
   "optionalDependencies": {
     "pg":       "^8.20.0",
