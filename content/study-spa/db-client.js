@@ -401,18 +401,24 @@
   //   SbLabs.logEvent(attemptId, type, payload) → void
   //   SbLabs.isDockerMode()                   → boolean
 
-  const ORCH_URL = window.SB_ORCH_URL || null; // e.g. 'http://localhost:3002'
+  const ORCH_DIRECT = window.SB_ORCH_URL || null;
+  const ORCH_PROXY_BASE = API_URL + '/api/labs/orchestrator';
 
-  /** Fetch helper that talks to the Lab Orchestrator (no auth header needed). */
+  /** Fetch helper for lab orchestrator calls (JWT-protected LMS proxy by default). */
   async function orchFetch(method, path, body) {
-    if (!ORCH_URL) throw new Error('SB_ORCH_URL is not configured.');
+    const useProxy = !ORCH_DIRECT;
+    const base = useProxy ? ORCH_PROXY_BASE : ORCH_DIRECT;
+    const token = getToken();
+    if (useProxy && !token) throw new Error('Sign in required for Docker lab mode.');
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), 15000);
     let res;
     try {
-      res = await fetch(ORCH_URL + path, {
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = 'Bearer ' + token;
+      res = await fetch(base + path, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: body != null ? JSON.stringify(body) : undefined,
         signal: controller.signal
       });
@@ -426,8 +432,8 @@
 
   window.SbLabs = {
 
-    /** Returns true when a live Docker orchestrator is configured. */
-    isDockerMode() { return !!ORCH_URL; },
+    /** Returns true when Docker lab mode is available (proxy or legacy direct URL). */
+    isDockerMode() { return !!(ORCH_DIRECT || ORCH_PROXY_BASE); },
 
     // ── LMS attempt management ───────────────────────────────────────────────
 
@@ -471,7 +477,7 @@
      *                                call the completion webhook correctly
      */
     async provision(activity_id, lab_type = 'python', attempt_id = null) {
-      if (!ORCH_URL) return null;
+      if (!this.isDockerMode()) return null;
       const user = getUser();
       if (!user) return null;
       try {
@@ -496,7 +502,7 @@
      * @param {number} [timeout=30] - per-execution timeout in seconds
      */
     async execCode(session_id, code, timeout = 30) {
-      if (!ORCH_URL || !session_id) return { stdout: '', stderr: 'No active session.', exit_code: 1 };
+      if (!this.isDockerMode() || !session_id) return { stdout: '', stderr: 'No active session.', exit_code: 1 };
       try {
         return await orchFetch('POST', `/exec/${session_id}`, { code, timeout });
       } catch (err) {
@@ -509,7 +515,7 @@
      * Call this when the student clicks a "Reset" or "Start Over" button.
      */
     async resetSession(session_id) {
-      if (!ORCH_URL || !session_id) return;
+      if (!this.isDockerMode() || !session_id) return;
       try { await orchFetch('POST', `/reset/${session_id}`, {}); } catch {}
     },
 
@@ -518,7 +524,7 @@
      * Call this on page unload or when the user navigates away from the lab.
      */
     async cleanupSession(session_id) {
-      if (!ORCH_URL || !session_id) return;
+      if (!this.isDockerMode() || !session_id) return;
       try { await orchFetch('DELETE', `/cleanup/${session_id}`, null); } catch {}
     },
 
@@ -530,7 +536,7 @@
      * @param {{ score, passed, time_spent_s, answer_json, feedback_json }} opts
      */
     async submitDockerAttempt(session_id, { score, passed, time_spent_s, answer_json, feedback_json } = {}) {
-      if (!ORCH_URL || !session_id) return;
+      if (!this.isDockerMode() || !session_id) return;
       try {
         await orchFetch('POST', `/submit/${session_id}`, {
           score, passed: passed ? 1 : 0, time_spent_s, answer_json, feedback_json

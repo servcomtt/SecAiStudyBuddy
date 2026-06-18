@@ -37,7 +37,7 @@ const { Readable } = require('stream');
 const {
   RateLimiter, securityHeaders, inputSanitizer, bodySizeLimit,
   validatePassword, validateEmail, securityLog, AccountLockout,
-  csrfHeaderCheck,
+  csrfHeaderCheck, assertProductionSecrets,
 } = require('./middleware/security');
 
 // ── Database abstraction ──────────────────────────────────────────────────────
@@ -101,6 +101,8 @@ const CERT_PREFIX    = process.env.CERT_PREFIX    || 'SB';
 const WEBHOOK_SECRET  = process.env.WEBHOOK_SECRET  || 'dev-webhook-secret-CHANGE-ME';
 const IMPORTER_URL    = (process.env.IMPORTER_URL   || 'http://localhost:3003').replace(/\/$/, '');
 const LMS_API_KEY     = process.env.LMS_API_KEY     || '';
+const LAB_ORCHESTRATOR_URL = (process.env.LAB_ORCHESTRATOR_URL || process.env.LAB_ORCH_URL || 'http://localhost:3002').replace(/\/$/, '');
+const ORCHESTRATOR_API_KEY = process.env.ORCHESTRATOR_API_KEY || WEBHOOK_SECRET;
 const QIMPORT_DIR     = process.env.QIMPORT_DIR     || path.join(__dirname, 'uploads', 'question-imports');
 const CONTENT_DIR = path.join(__dirname, 'content');
 const STUDY_SPA_DIR = path.join(CONTENT_DIR, 'study-spa');
@@ -147,6 +149,14 @@ const _qimportUpload = multer({
 
 if (JWT_SECRET     === 'dev-secret-CHANGE-IN-PRODUCTION')  console.warn('[WARN] Using default JWT_SECRET. Set JWT_SECRET env var before production use.');
 if (WEBHOOK_SECRET === 'dev-webhook-secret-CHANGE-ME')     console.warn('[WARN] Using default WEBHOOK_SECRET. Set WEBHOOK_SECRET env var before production use.');
+if (!LMS_API_KEY)                                          console.warn('[WARN] LMS_API_KEY is unset. Importer callbacks are disabled until configured.');
+
+assertProductionSecrets([
+  ['JWT_SECRET', JWT_SECRET, ['dev-secret-CHANGE-IN-PRODUCTION']],
+  ['WEBHOOK_SECRET', WEBHOOK_SECRET, ['dev-webhook-secret-CHANGE-ME', 'dev-webhook-secret']],
+  ['LMS_API_KEY', LMS_API_KEY, ['', 'dev-lms-api-key-CHANGE-ME']],
+  ['ORCHESTRATOR_API_KEY', ORCHESTRATOR_API_KEY, ['dev-webhook-secret-CHANGE-ME', 'dev-webhook-secret']],
+]);
 
 // ── Express app ───────────────────────────────────────────────────────────────
 
@@ -179,6 +189,10 @@ app.use('/api/', globalLimiter.middleware());
 const authLimiter = new RateLimiter({ windowMs: 900000, maxRequests: 15, message: 'Too many auth attempts. Try again in 15 minutes.' });
 app.use('/api/auth/login', authLimiter.middleware());
 app.use('/api/auth/register', authLimiter.middleware());
+
+// ── Rate limit Ollama proxy (prevents unauthenticated abuse when exposed) ───
+const ollamaLimiter = new RateLimiter({ windowMs: 60000, maxRequests: 30, message: 'Too many AI requests. Please slow down.' });
+app.use('/sb-ollama/', ollamaLimiter.middleware());
 
 // ── OWASP A07: Account lockout tracker ──────────────────────────────────────
 const accountLockout = new AccountLockout({ maxAttempts: 5, lockoutMinutes: 15 });
@@ -839,6 +853,60 @@ app.get('/api/labs/attempts', authRequired, asyncHandler(async (req, res) => {
 
 
 // =============================================================================
+// LAB ORCHESTRATOR PROXY (authenticated — browser never needs direct :3002 access)
+// =============================================================================
+
+async function orchestratorRequest(method, orchPath, body) {
+  const fetchFn = globalThis.fetch || require('node-fetch');
+  const response = await fetchFn(`${LAB_ORCHESTRATOR_URL}${orchPath}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Orchestrator-Key': ORCHESTRATOR_API_KEY,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(120_000),
+  });
+  const raw = await response.text();
+  let data;
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = { error: raw || 'Invalid orchestrator response.' }; }
+  return { status: response.status, data };
+}
+
+app.post('/api/labs/orchestrator/provision', authRequired, asyncHandler(async (req, res) => {
+  const { activity_id, lab_type, attempt_id } = req.body;
+  if (!activity_id) return res.status(400).json({ error: 'activity_id required.' });
+  const result = await orchestratorRequest('POST', '/provision', {
+    user_id: req.user.sub,
+    activity_id,
+    lab_type: lab_type || 'python',
+    attempt_id: attempt_id || null,
+  });
+  res.status(result.status).json(result.data);
+}));
+
+app.post('/api/labs/orchestrator/exec/:sessionId', authRequired, asyncHandler(async (req, res) => {
+  const result = await orchestratorRequest('POST', `/exec/${encodeURIComponent(req.params.sessionId)}`, req.body);
+  res.status(result.status).json(result.data);
+}));
+
+app.post('/api/labs/orchestrator/reset/:sessionId', authRequired, asyncHandler(async (req, res) => {
+  const result = await orchestratorRequest('POST', `/reset/${encodeURIComponent(req.params.sessionId)}`, req.body || {});
+  res.status(result.status).json(result.data);
+}));
+
+app.delete('/api/labs/orchestrator/cleanup/:sessionId', authRequired, asyncHandler(async (req, res) => {
+  const result = await orchestratorRequest('DELETE', `/cleanup/${encodeURIComponent(req.params.sessionId)}`);
+  res.status(result.status).json(result.data);
+}));
+
+app.post('/api/labs/orchestrator/submit/:sessionId', authRequired, asyncHandler(async (req, res) => {
+  const result = await orchestratorRequest('POST', `/submit/${encodeURIComponent(req.params.sessionId)}`, req.body);
+  res.status(result.status).json(result.data);
+}));
+
+
+// =============================================================================
 // QUIZ ATTEMPT ROUTES
 // =============================================================================
 
@@ -1221,9 +1289,11 @@ app.post(
       form.append('parsing_mode', parsing_mode || 'auto');
 
       const fetchFn = globalThis.fetch || require('node-fetch');
+      const headers = form.getHeaders ? form.getHeaders() : {};
+      if (LMS_API_KEY) headers.Authorization = `Bearer ${LMS_API_KEY}`;
       fetchFn(`${IMPORTER_URL}/parse`, {
         method  : 'POST',
-        headers : form.getHeaders ? form.getHeaders() : {},
+        headers,
         body    : form,
       }).catch(err => console.error('[QImport] Failed to reach importer service:', err.message));
     }
@@ -1252,7 +1322,10 @@ app.get('/api/admin/question-imports/:id', adminRequired, asyncHandler(async (re
 app.post('/api/admin/question-imports/:id/results', asyncHandler(async (req, res) => {
   // Validate service-to-service auth
   const incoming = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  if (LMS_API_KEY && incoming !== LMS_API_KEY) {
+  if (!LMS_API_KEY) {
+    return res.status(503).json({ error: 'Import callback is disabled until LMS_API_KEY is configured.' });
+  }
+  if (incoming !== LMS_API_KEY) {
     return res.status(401).json({ error: 'Invalid service API key.' });
   }
 

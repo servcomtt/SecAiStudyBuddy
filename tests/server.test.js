@@ -445,6 +445,30 @@ describe('POST /api/admin/question-imports/:id/results — importer callback', (
     assert.equal(r.status, 401);
   });
 
+  test('rejects callback with missing API key header', async () => {
+    return new Promise((resolve, reject) => {
+      const bodyStr = JSON.stringify({ status: 'review', items: [] });
+      const r = http.request({
+        method  : 'POST',
+        hostname: '127.0.0.1',
+        port    : new URL(baseUrl).port,
+        path    : `/api/admin/question-imports/${jobId}/results`,
+        headers : {
+          'Content-Type'  : 'application/json',
+          'Content-Length': Buffer.byteLength(bodyStr),
+        },
+      }, res => {
+        res.resume();
+        res.on('end', () => {
+          try { assert.equal(res.statusCode, 401); resolve(); } catch (e) { reject(e); }
+        });
+      });
+      r.on('error', reject);
+      r.write(bodyStr);
+      r.end();
+    });
+  });
+
   test('accepts valid callback and stores items', async () => {
     const r = await req('POST', `/api/admin/question-imports/${jobId}/results`, {
       token: process.env.LMS_API_KEY,
@@ -643,6 +667,16 @@ describe('Admin report endpoints', () => {
       const r = await req('GET', ep, { token: studentToken });
       assert.equal(r.status, 403, `${ep} should return 403 for student`);
     }
+  });
+});
+
+
+describe('POST /api/labs/orchestrator/provision', () => {
+  test('requires authentication', async () => {
+    const r = await req('POST', '/api/labs/orchestrator/provision', {
+      body: { activity_id: 'ch1-lab-code', lab_type: 'python' }
+    });
+    assert.equal(r.status, 401);
   });
 });
 

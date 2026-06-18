@@ -38,6 +38,7 @@ const { v4: uuidv4 } = require('uuid');
 const PORT           = parseInt(process.env.PORT           || '3002', 10);
 const LMS_URL        = process.env.LMS_URL                 || 'http://localhost:3001';
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET          || 'dev-webhook-secret';
+const ORCHESTRATOR_API_KEY = process.env.ORCHESTRATOR_API_KEY || WEBHOOK_SECRET;
 const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS || String(15 * 60 * 1000), 10);
 const CORS_ORIGIN    = process.env.CORS_ORIGIN             || 'http://localhost:3000';
 
@@ -57,6 +58,24 @@ const docker = new Docker();
 const app = express();
 app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
+
+function orchestratorAuth(req, res, next) {
+  if (!ORCHESTRATOR_API_KEY) {
+    return res.status(503).json({ error: 'Orchestrator authentication is not configured.' });
+  }
+  const incoming =
+    req.headers['x-orchestrator-key'] ||
+    (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (incoming !== ORCHESTRATOR_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized.' });
+  }
+  next();
+}
+
+app.use((req, res, next) => {
+  if (req.path === '/health') return next();
+  return orchestratorAuth(req, res, next);
+});
 
 // ── Session store ─────────────────────────────────────────────────────────────
 // In-memory map — restarting the orchestrator orphans containers.
@@ -217,7 +236,8 @@ app.post('/provision', asyncHandler(async (req, res) => {
     // Clean up partially-started container on error
     if (container) await container.remove({ force: true }).catch(() => {});
     console.error('[PROVISION]', err.message);
-    res.status(500).json({ error: 'Failed to provision lab container.', detail: err.message });
+    const detail = process.env.NODE_ENV === 'production' ? undefined : err.message;
+    res.status(500).json({ error: 'Failed to provision lab container.', ...(detail ? { detail } : {}) });
   }
 }));
 
@@ -267,7 +287,8 @@ app.post('/exec/:sessionId', asyncHandler(async (req, res) => {
     const data = await r.json();
     res.json(data);
   } catch (err) {
-    res.status(502).json({ error: 'Container unreachable.', detail: err.message });
+    const detail = process.env.NODE_ENV === 'production' ? undefined : err.message;
+    res.status(502).json({ error: 'Container unreachable.', ...(detail ? { detail } : {}) });
   }
 }));
 
@@ -291,7 +312,8 @@ app.post('/reset/:sessionId', asyncHandler(async (req, res) => {
     const data = await r.json();
     res.json(data);
   } catch (err) {
-    res.status(502).json({ error: 'Container unreachable.', detail: err.message });
+    const detail = process.env.NODE_ENV === 'production' ? undefined : err.message;
+    res.status(502).json({ error: 'Container unreachable.', ...(detail ? { detail } : {}) });
   }
 }));
 
@@ -389,6 +411,9 @@ app.delete('/cleanup/:sessionId', asyncHandler(async (req, res) => {
  * Lists all active sessions.
  */
 app.get('/sessions', (_req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found.' });
+  }
   const list = [];
   for (const [, s] of sessions) {
     list.push({
@@ -409,7 +434,8 @@ app.get('/sessions', (_req, res) => {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
   console.error('[ERROR]', err.message);
-  res.status(500).json({ error: err.message || 'Internal server error.' });
+  const detail = process.env.NODE_ENV === 'production' ? undefined : err.message;
+  res.status(500).json({ error: 'Internal server error.', ...(detail ? { detail } : {}) });
 });
 
 

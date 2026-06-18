@@ -33,6 +33,8 @@ const { detectQuestions }   = require('./parsers/question-detector');
 const PORT        = parseInt(process.env.IMPORTER_PORT || '3003', 10);
 const LMS_URL     = (process.env.LMS_URL || 'http://localhost:3001').replace(/\/$/, '');
 const LMS_API_KEY = process.env.LMS_API_KEY || '';
+const IMPORTER_API_KEY = process.env.IMPORTER_API_KEY || LMS_API_KEY;
+const IMPORTER_CORS_ORIGIN = process.env.IMPORTER_CORS_ORIGIN || process.env.CORS_ORIGIN || false;
 const UPLOAD_DIR  = process.env.UPLOAD_DIR  || '/tmp/qimport-uploads';
 const RESULTS_DIR = process.env.RESULTS_DIR || '/tmp/qimport-results';
 const MAX_FILE_MB = parseInt(process.env.MAX_FILE_MB || '50', 10);
@@ -77,8 +79,22 @@ const upload = multer({
 // ── Express app ───────────────────────────────────────────────────────────────
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: IMPORTER_CORS_ORIGIN || false,
+  credentials: true,
+}));
+app.use(express.json({ limit: '1mb' }));
+
+function importerAuth(req, res, next) {
+  if (!IMPORTER_API_KEY) {
+    return res.status(503).json({ error: 'Importer authentication is not configured.' });
+  }
+  const incoming = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (incoming !== IMPORTER_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized.' });
+  }
+  next();
+}
 
 // ── Liveness probe ────────────────────────────────────────────────────────────
 
@@ -92,14 +108,14 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'question-im
 //   parsing_mode  — 'auto' | 'multiple_choice' | 'multi_select' | 'true_false' | 'mixed'
 //   callback_url  — optional override for LMS callback (defaults to LMS_URL)
 
-app.post('/parse', upload.single('file'), async (req, res) => {
+app.post('/parse', importerAuth, upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
 
   const jobId       = req.body.job_id;
   const parsingMode = req.body.parsing_mode || 'auto';
-  const callbackUrl = (req.body.callback_url || LMS_URL).replace(/\/$/, '');
+  const callbackUrl = LMS_URL.replace(/\/$/, '');
 
   if (!jobId) {
     return res.status(400).json({ error: 'job_id is required.' });

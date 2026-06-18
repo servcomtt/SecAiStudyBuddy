@@ -47,6 +47,7 @@ services:
       JWT_SECRET:         ${JWT_SECRET:-dev-secret-CHANGE-IN-PRODUCTION}
       CORS_ORIGIN:        ${CORS_ORIGIN:-http://localhost:3000}
       LAB_ORCHESTRATOR_URL: http://lab-orchestrator:3002
+      ORCHESTRATOR_API_KEY: ${ORCHESTRATOR_API_KEY:-dev-webhook-secret-CHANGE-ME}
       WEBHOOK_SECRET:     ${WEBHOOK_SECRET:-dev-webhook-secret-CHANGE-ME}
       IMPORTER_URL:       http://question-importer:3003
       LMS_API_KEY:        ${LMS_API_KEY:-dev-lms-api-key-CHANGE-ME}
@@ -83,11 +84,12 @@ services:
     container_name: studybuddy-lab-orchestrator
     restart: unless-stopped
     ports:
-      - "${ORCH_PORT:-3002}:3002"
+      - "127.0.0.1:${ORCH_PORT:-3002}:3002"
     environment:
       PORT:            3002
       LMS_URL:         http://lms:3001
       WEBHOOK_SECRET:  ${WEBHOOK_SECRET:-dev-webhook-secret-CHANGE-ME}
+      ORCHESTRATOR_API_KEY: ${ORCHESTRATOR_API_KEY:-dev-webhook-secret-CHANGE-ME}
       CORS_ORIGIN:     ${CORS_ORIGIN:-http://localhost:3000}
       SESSION_TTL_MS:  ${SESSION_TTL_MS:-900000}        # 15 min default
       LAB_MEMORY_BYTES: ${LAB_MEMORY_BYTES:-268435456}  # 256 MB default
@@ -121,11 +123,13 @@ services:
     container_name: studybuddy-question-importer
     restart: unless-stopped
     ports:
-      - "${IMPORTER_PORT:-3003}:3003"
+      - "127.0.0.1:${IMPORTER_PORT:-3003}:3003"
     environment:
       IMPORTER_PORT:  3003
       LMS_URL:        http://lms:3001
       LMS_API_KEY:    ${LMS_API_KEY:-dev-lms-api-key-CHANGE-ME}
+      IMPORTER_API_KEY: ${IMPORTER_API_KEY:-${LMS_API_KEY:-dev-lms-api-key-CHANGE-ME}}
+      IMPORTER_CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       UPLOAD_DIR:     /tmp/qimport-uploads
       RESULTS_DIR:    /app/results
       MAX_FILE_MB:    ${MAX_FILE_MB:-50}

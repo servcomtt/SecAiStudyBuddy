@@ -303,6 +303,50 @@ function csrfHeaderCheck() {
   };
 }
 
+// ── Service-to-service API key auth ─────────────────────────────────────────
+
+function readServiceApiKey(req) {
+  return (
+    (req.headers.authorization || '').replace(/^Bearer\s+/i, '') ||
+    req.headers['x-orchestrator-key'] ||
+    req.headers['x-service-key'] ||
+    ''
+  );
+}
+
+function serviceApiKeyAuth(getExpectedKey, { serviceName = 'service' } = {}) {
+  return (req, res, next) => {
+    const expected = typeof getExpectedKey === 'function' ? getExpectedKey() : getExpectedKey;
+    if (!expected) {
+      return res.status(503).json({ error: `${serviceName} authentication is not configured.` });
+    }
+    if (readServiceApiKey(req) !== expected) {
+      securityLog('SERVICE_AUTH_FAILURE', { service: serviceName, path: req.path, ip: req.ip });
+      return res.status(401).json({ error: 'Unauthorized.' });
+    }
+    next();
+  };
+}
+
+function assertProductionSecrets(checks) {
+  if (process.env.NODE_ENV !== 'production') return;
+  const missing = checks
+    .filter(([, value, insecureValues = []]) => !value || insecureValues.includes(value))
+    .map(([name]) => name);
+  if (missing.length) {
+    console.error(`[FATAL] Insecure or missing production secrets: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+}
+
+function isSameServiceOrigin(targetUrl, baseUrl) {
+  try {
+    return new URL(targetUrl).origin === new URL(baseUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
 // ── Exports ──────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -315,5 +359,8 @@ module.exports = {
   securityLog,
   AccountLockout,
   csrfHeaderCheck,
+  serviceApiKeyAuth,
+  assertProductionSecrets,
+  isSameServiceOrigin,
   PASSWORD_POLICY,
 };
