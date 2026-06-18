@@ -26,10 +26,7 @@ jobs:
   preview:
     name: Vercel Preview
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'pull_request'
-      && github.event.pull_request.head.repo.fork == false
-      && secrets.VERCEL_TOKEN != ''
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
     permissions:
       contents: read
       pull-requests: write
@@ -47,15 +44,28 @@ jobs:
         run: npm install --global vercel@latest
 
       - name: Pull Vercel environment metadata
+        if: env.VERCEL_TOKEN != ''
         run: vercel pull --yes --environment=preview --token="${{ secrets.VERCEL_TOKEN }}"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
       - name: Deploy preview
         id: deploy_preview
+        if: env.VERCEL_TOKEN != ''
         run: |
           URL=$(vercel deploy --token="${{ secrets.VERCEL_TOKEN }}" | tr -d '\r\n')
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Skip preview deploy (Vercel secrets not configured)
+        if: env.VERCEL_TOKEN == ''
+        run: echo "::notice::VERCEL_TOKEN not set — skipping preview deploy."
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
       - name: Wait for preview HTTP
+        if: steps.deploy_preview.outputs.url != ''
         env:
           PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
         run: |
@@ -71,6 +81,7 @@ jobs:
           exit 1
 
       - name: Mobile & tablet Playwright (WCAG + responsive gates)
+        if: steps.deploy_preview.outputs.url != ''
         env:
           PLAYWRIGHT_PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
           CI: true
@@ -81,6 +92,7 @@ jobs:
           npm run test:e2e
 
       - name: Comment preview URL on PR
+        if: steps.deploy_preview.outputs.url != ''
         uses: actions/github-script@v8
         env:
           PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
@@ -97,10 +109,7 @@ jobs:
   production:
     name: Vercel Production
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'push'
-      && github.ref == 'refs/heads/main'
-      && secrets.VERCEL_TOKEN != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
 
@@ -114,10 +123,25 @@ jobs:
           node-version: 22
 
       - name: Install Vercel CLI
+        if: env.VERCEL_TOKEN != ''
         run: npm install --global vercel@latest
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
       - name: Pull Vercel environment metadata
+        if: env.VERCEL_TOKEN != ''
         run: vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
       - name: Deploy production
+        if: env.VERCEL_TOKEN != ''
         run: vercel deploy --prod --token="${{ secrets.VERCEL_TOKEN }}"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Skip production deploy (Vercel secrets not configured)
+        if: env.VERCEL_TOKEN == ''
+        run: echo "::notice::VERCEL_TOKEN not set — skipping production deploy."
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
