@@ -1,0 +1,143 @@
+##############################################################################
+# Study Buddy — Docker Compose
+# ---------------------------------------------------------------------------
+# Services
+#   lms              Node/Express API (user accounts, courses, grades, certs)
+#   lab-orchestrator Manages isolated Docker containers for lab exercises
+#   question-importer Document parsing microservice (PDF/DOCX → question items)
+#
+# Usage
+#   docker compose up --build          # first run
+#   docker compose up -d               # background
+#   docker compose down                # stop all
+#   docker compose logs -f lms         # tail LMS logs
+#
+# Environment
+#   Copy .env.example → .env and set secrets before production use.
+#   All env vars below fall back to safe dev defaults when the .env is absent.
+##############################################################################
+
+version: '3.9'
+
+# ── Shared network ────────────────────────────────────────────────────────────
+networks:
+  studybuddy:
+    driver: bridge
+
+# ── Named volumes ─────────────────────────────────────────────────────────────
+volumes:
+  lms-db:
+  qimport-uploads:      # uploaded source documents (pdf/docx/image)
+  qimport-results:      # extracted images from imported documents
+
+
+services:
+
+  # ── LMS ─────────────────────────────────────────────────────────────────────
+  lms:
+    build:
+      context: .
+      dockerfile: Dockerfile.lms
+    container_name: studybuddy-lms
+    restart: unless-stopped
+    ports:
+      - "${LMS_PORT:-3001}:3001"
+    environment:
+      PORT:               3001
+      JWT_SECRET:         ${JWT_SECRET:-dev-secret-CHANGE-IN-PRODUCTION}
+      CORS_ORIGIN:        ${CORS_ORIGIN:-http://localhost:3000}
+      LAB_ORCHESTRATOR_URL: http://lab-orchestrator:3002
+      WEBHOOK_SECRET:     ${WEBHOOK_SECRET:-dev-webhook-secret-CHANGE-ME}
+      IMPORTER_URL:       http://question-importer:3003
+      LMS_API_KEY:        ${LMS_API_KEY:-dev-lms-api-key-CHANGE-ME}
+      # Set DATABASE_URL to a postgres:// connection string to use PostgreSQL.
+      # Leave unset to use the bundled SQLite file.
+      DATABASE_URL:       ${DATABASE_URL:-}
+      DB_PATH:            /app/db/studybuddy.db
+      CERT_PREFIX:        ${CERT_PREFIX:-SB}
+      QIMPORT_DIR:        /app/uploads/question-imports
+    volumes:
+      - lms-db:/app/db                        # persist SQLite across restarts
+      - qimport-results:/app/uploads/question-imports  # extracted images accessible by LMS
+    networks:
+      - studybuddy
+    depends_on:
+      lab-orchestrator:
+        condition: service_healthy
+      question-importer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "require('http').get('http://localhost:3001/health',r=>r.statusCode===200?process.exit(0):process.exit(1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+
+  # ── Lab Orchestrator ─────────────────────────────────────────────────────────
+  lab-orchestrator:
+    build:
+      context: ./lab-orchestrator
+      dockerfile: Dockerfile
+    container_name: studybuddy-lab-orchestrator
+    restart: unless-stopped
+    ports:
+      - "${ORCH_PORT:-3002}:3002"
+    environment:
+      PORT:            3002
+      LMS_URL:         http://lms:3001
+      WEBHOOK_SECRET:  ${WEBHOOK_SECRET:-dev-webhook-secret-CHANGE-ME}
+      CORS_ORIGIN:     ${CORS_ORIGIN:-http://localhost:3000}
+      SESSION_TTL_MS:  ${SESSION_TTL_MS:-900000}        # 15 min default
+      LAB_MEMORY_BYTES: ${LAB_MEMORY_BYTES:-268435456}  # 256 MB default
+      LAB_CPU_QUOTA:   ${LAB_CPU_QUOTA:-50000}          # 50 % of one core
+      LAB_IMAGE_PYTHON: studybuddy-python-lab:latest
+    volumes:
+      # Docker socket — required for the orchestrator to manage lab containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    # The orchestrator container needs access to the Docker socket group.
+    # On most Linux hosts the Docker socket group GID is 999; adjust if different.
+    group_add:
+      - "999"
+    networks:
+      - studybuddy
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "require('http').get('http://localhost:3002/health',r=>r.statusCode===200?process.exit(0):process.exit(1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+
+  # ── Question Importer ─────────────────────────────────────────────────────────
+  # Stateless microservice: receives uploaded documents, runs the parse pipeline,
+  # and POSTs extracted question items back to the LMS via /api/admin/question-imports/:id/results
+  question-importer:
+    build:
+      context: ./question-importer
+      dockerfile: Dockerfile
+    container_name: studybuddy-question-importer
+    restart: unless-stopped
+    ports:
+      - "${IMPORTER_PORT:-3003}:3003"
+    environment:
+      IMPORTER_PORT:  3003
+      LMS_URL:        http://lms:3001
+      LMS_API_KEY:    ${LMS_API_KEY:-dev-lms-api-key-CHANGE-ME}
+      UPLOAD_DIR:     /tmp/qimport-uploads
+      RESULTS_DIR:    /app/results
+      MAX_FILE_MB:    ${MAX_FILE_MB:-50}
+    volumes:
+      - qimport-uploads:/tmp/qimport-uploads
+      - qimport-results:/app/results
+    networks:
+      - studybuddy
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "require('http').get('http://localhost:3003/health',r=>r.statusCode===200?process.exit(0):process.exit(1)).on('error',()=>process.exit(1))"]
+      interval: 20s
+      timeout: 8s
+      retries: 3
+      start_period: 30s

@@ -1,0 +1,34 @@
+# Webapp deployment currently still reads a few shared study sources from /content:
+# keep `webapp/`, `content/question-bank/questions.json`,
+# `content/study-spa/index.html`, `content/study-spa/labs.js`, and `content/notebooks/`.
+
+node_modules
+db
+tests
+scripts
+lab-orchestrator
+question-importer
+uploads
+materials
+docs
+middleware
+quiz_images
+.github
+.claude
+.codex
+Dockerfile.lms
+docker-compose.yml
+server.js
+package.json
+package-lock.json
+.env
+.env.local
+.env.*.local
+.env.example
+README.md
+CNAME
+content/study-spa/db-client.js
+content/study-spa/explanations.js
+content/study-spa/question_images.js
+content/study-spa/quiz_data.js
+content/study-spa/quiz_images

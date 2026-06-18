@@ -1,0 +1,117 @@
+name: Deploy (Vercel)
+
+# Requires repo secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+# Preview job runs Playwright against the deployed URL (see MOBILE_RESPONSIVE_RELEASE_GATES.md).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    name: Vercel Preview
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment metadata
+        run: vercel pull --yes --environment=preview --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Deploy preview
+        id: deploy_preview
+        run: |
+          URL=$(vercel deploy --token="${{ secrets.VERCEL_TOKEN }}" | tr -d '\r\n')
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for preview HTTP
+        env:
+          PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
+        run: |
+          for i in $(seq 1 45); do
+            if curl -sfL "${PREVIEW_URL}/dashboard" -o /dev/null; then
+              echo "Preview ready."
+              exit 0
+            fi
+            echo "attempt $i ..."
+            sleep 4
+          done
+          echo "::error::Preview did not respond in time"
+          exit 1
+
+      - name: Mobile & tablet Playwright (WCAG + responsive gates)
+        env:
+          PLAYWRIGHT_PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
+          CI: true
+        working-directory: webapp
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v8
+        env:
+          PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
+        with:
+          script: |
+            const body = `### Vercel Preview\n\nPreview URL: ${process.env.PREVIEW_URL}`;
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+  production:
+    name: Vercel Production
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment metadata
+        run: vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Deploy production
+        run: vercel deploy --prod --token="${{ secrets.VERCEL_TOKEN }}"

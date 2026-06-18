@@ -1,0 +1,8 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Keep workflow/config files stable across Windows + WSL edits
+.github/workflows/*.yml text eol=lf
+.github/workflows/*.yaml text eol=lf
+*.yml text=auto eol=lf
+*.yaml text=auto eol=lf

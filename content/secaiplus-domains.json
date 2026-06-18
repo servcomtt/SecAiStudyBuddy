@@ -1,0 +1,51 @@
+{
+  "exam": "CompTIA SecAI+",
+  "examCode": "CY0-001",
+  "version": "4.0",
+  "sourcePdf": "materials/CompTIA SecAI+ CY0-001 Exam Objectives (4.0).pdf",
+  "domains": [
+    {
+      "id": "1.0",
+      "title": "Basic AI Concepts Related to Cybersecurity",
+      "weightPercent": 17,
+      "objectives": [
+        { "id": "1.1", "title": "Compare and contrast various AI types and techniques used in cybersecurity." },
+        { "id": "1.2", "title": "Explain the importance of data security in relation to AI." },
+        { "id": "1.3", "title": "Explain the importance of security throughout the life cycle of AI." }
+      ]
+    },
+    {
+      "id": "2.0",
+      "title": "Securing AI Systems",
+      "weightPercent": 40,
+      "objectives": [
+        { "id": "2.1", "title": "Given a scenario, use AI threat-modeling resources." },
+        { "id": "2.2", "title": "Given a set of requirements, implement security controls for AI systems." },
+        { "id": "2.3", "title": "Given a scenario, implement appropriate access controls for AI systems." },
+        { "id": "2.4", "title": "Given a scenario, implement data security controls for AI systems." },
+        { "id": "2.5", "title": "Given a scenario, implement monitoring and auditing for AI systems." },
+        { "id": "2.6", "title": "Given a scenario, analyze the evidence of an attack and suggest compensating controls for AI systems." }
+      ]
+    },
+    {
+      "id": "3.0",
+      "title": "AI-assisted Security",
+      "weightPercent": 24,
+      "objectives": [
+        { "id": "3.1", "title": "Given a scenario, use AI-enabled tools to facilitate security tasks." },
+        { "id": "3.2", "title": "Explain how AI enables or enhances attack vectors." },
+        { "id": "3.3", "title": "Given a scenario, use AI to automate security tasks." }
+      ]
+    },
+    {
+      "id": "4.0",
+      "title": "AI Governance, Risk, and Compliance",
+      "weightPercent": 19,
+      "objectives": [
+        { "id": "4.1", "title": "Explain organizational governance structures that support AI." },
+        { "id": "4.2", "title": "Explain risks associated with AI." },
+        { "id": "4.3", "title": "Summarize the impact of compliance on business use and development of AI." }
+      ]
+    }
+  ]
+}

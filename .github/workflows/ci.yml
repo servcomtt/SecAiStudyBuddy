@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ matrix.node-version }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-${{ matrix.node-version }}-
+
+      - name: Install build tools for native modules
+        run: sudo apt-get update && sudo apt-get install -y python3 make g++
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Initialize database
+        run: npm run db:init
+
+      - name: Seed database
+        run: npm run db:seed
+
+      - name: Run tests
+        run: npm test
+        env:
+          JWT_SECRET: ci-test-secret
+          LMS_PORT: 3001
+
+      - name: Verify question bank sync
+        run: npm run check:question-sync
+
+      - name: Security audit
+        run: npm audit --audit-level=critical || true
+
+  webapp:
+    name: Optional Next.js webapp (Node 22)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Cache npm (webapp)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-webapp-${{ hashFiles('webapp/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-webapp-
+
+      - name: Install webapp dependencies
+        run: npm --prefix webapp ci
+
+      - name: Typecheck webapp
+        run: npm run web:typecheck
+
+      - name: Test webapp (Vitest)
+        run: npm run web:test
+
+      - name: Build webapp
+        run: npm run web:build
+
+      - name: Install Playwright (Chromium)
+        run: npm exec --prefix webapp playwright install --with-deps chromium
+
+      - name: Responsive & accessibility E2E (release gate)
+        run: npm run web:test:e2e
+        env:
+          CI: true
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check for secrets in code
+        run: |
+          echo "Scanning for potential secrets..."
+          FOUND=$(grep -rn --include='*.js' --include='*.json' --include='*.html' \
+            -E '(password|secret|api_key|token)\s*[:=]\s*["\x27][^"\x27]{8,}' \
+            --exclude-dir=node_modules --exclude-dir=.git . \
+          | grep -vi 'example\|placeholder\|replace\|test\|mock\|dummy\|TODO\|changeme\|hash' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::warning::Potential secrets found — review these lines:"
+            echo "$FOUND"
+          else
+            echo "No hardcoded secrets found."
+          fi
+
+      - name: Validate JSON files
+        run: |
+          for f in $(find . -name '*.json' -not -path './node_modules/*'); do
+            python3 -c "import json; json.load(open('$f'))" && echo "OK: $f" || echo "INVALID: $f"
+          done
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build LMS image
+        run: docker build -f Dockerfile.lms -t secaiplus-lms:${{ github.sha }} .
+
+      - name: Build lab-orchestrator image
+        run: docker build -f lab-orchestrator/Dockerfile -t secaiplus-lab-orch:${{ github.sha }} ./lab-orchestrator
+
+      - name: Build question-importer image
+        run: docker build -f question-importer/Dockerfile -t secaiplus-importer:${{ github.sha }} ./question-importer
+
+      - name: Verify images
+        run: |
+          docker images | grep secaiplus
+          echo "All images built successfully."

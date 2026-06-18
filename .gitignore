@@ -1,0 +1,58 @@
+# ── Dependencies ───────────────────────────────────────────
+node_modules/
+
+# ── Environment ────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Database (local dev only) ──────────────────────────────
+db/studybuddy.db
+db/*.db
+*.sqlite
+*.sqlite3
+
+# ── Uploads (user-generated) ──────────────────────────────
+uploads/
+
+# ── Copyrighted / proprietary study materials ─────────────
+# Do NOT commit licensed PDFs to a public repo
+materials/*.pdf
+
+# ── OS / editor ───────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# ── Claude Code session data ──────────────────────────────
+.claude/
+
+# ── Python ─────────────────────────────────────────────────
+__pycache__/
+*.pyc
+
+# ── Local Ollama HTTPS URL (optional; see docs/OLLAMA_HTTPS.md) ──
+content/study-spa/sb-ollama-config.js
+
+# ── Build output (Vercel) ──────────────────────────────────
+public/
+.next/
+webapp/.next/
+webapp/out/
+webapp/playwright-report/
+webapp/test-results/
+*.tsbuildinfo
+
+# ── Docker volumes / temp ──────────────────────────────────
+docker-data/
+
+# ── Scratch / generated extracts (do not commit) ───────────
+scripts/*_extracted.txt
+
+# ── Logs ───────────────────────────────────────────────────
+*.log
+npm-debug.log*

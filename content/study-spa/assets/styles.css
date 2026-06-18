@@ -1,0 +1,87 @@
+/* Dashboard stat bubbles — spaced grid, centered column layout per tile */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.stat-card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.stat-card .stat-icon {
+  font-size: 28px;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+
+.stat-card .stat-val {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text);
+  width: 100%;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.stat-card .stat-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  width: 100%;
+  text-align: center;
+  line-height: 1.35;
+}
+
+/* Chapter cards on dashboard — a bit more air between tiles */
+.chapters-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 22px;
+}
+
+/* Guided chapter stepper — no horizontal connector lines; space between step bubbles */
+.ch-stepper {
+  gap: 12px;
+}
+
+/* Ask Study Buddy — more separation, no heavy borders between messages */
+.sb-ask-dlg-log {
+  gap: 16px;
+}
+
+.sb-ask-msg--user,
+.sb-ask-msg--ai {
+  border: none;
+  box-shadow: 0 1px 5px rgba(32, 33, 36, 0.08);
+}
+
+@media (max-width: 900px) {
+  .stats-row {
+    grid-template-columns: 1fr;
+  }
+
+  .chapters-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Bottom nav: two-line label for “Continue learning” */
+#bottom-nav .bn-item .bn-label {
+  display: block;
+  line-height: 1.12;
+  text-align: center;
+  max-width: 5.5rem;
+  hyphens: auto;
+}
