@@ -1,6 +1,7 @@
 import { test, expect, devices } from '@playwright/test';
 
 import { BREAKPOINTS } from '../lib/breakpoints';
+import { chapters } from '../lib/course-data';
 
 /**
  * Core learner surfaces — must not introduce horizontal scroll at any project viewport.
@@ -72,6 +73,6 @@ test('mobile drawer opens and exposes chapter link (≤ mobileNav)', async ({ pa
   const ch1Drawer = page
     .locator('#mobile-nav-drawer .mobile-drawer__link--chapter')
     .filter({ hasText: /Ch\s*1/ })
-    .filter({ hasText: /Data Analyst/ });
+    .filter({ hasText: new RegExp(chapters[0].title, 'i') });
   await expect(ch1Drawer).toBeVisible();
 });

@@ -20,10 +20,10 @@
     "db:reset":     "node -e \"const f=require('fs'),p='db/studybuddy.db';if(f.existsSync(p))f.unlinkSync(p);console.log('Database deleted.')\" && npm run db:init && npm run db:seed",
     "db:pg:init":   "psql $DATABASE_URL -f db/schema.pg.sql",
     "db:pg:seed":   "psql $DATABASE_URL -f db/seeds.sql",
-    "test":         "node --test tests/**/*.test.js",
+    "test":         "node --test tests/*.test.js",
     "perf:smoke":   "node scripts/perf-smoke.js",
     "check:question-sync": "node scripts/check-question-sync.js",
-    "test:watch":   "node --test --watch tests/**/*.test.js",
+    "test:watch":   "node --test --watch tests/*.test.js",
     "hash":         "node -e \"require('bcryptjs').hash(process.argv[1],10).then(h=>{console.log(h)})\" --"
   },
   "keywords": [
