@@ -70,9 +70,9 @@ test('mobile drawer opens and exposes chapter link (≤ mobileNav)', async ({ pa
     await menuBtn.click();
   }
   await expect(page.locator('#mobile-nav-drawer')).toBeVisible();
-  const ch1Drawer = page
-    .locator('#mobile-nav-drawer .mobile-drawer__link--chapter')
-    .filter({ hasText: /Ch\s*1/ })
-    .filter({ hasText: new RegExp(chapters[0].title, 'i') });
-  await expect(ch1Drawer).toBeVisible();
+  await expect(
+    page.locator('#mobile-nav-drawer').getByRole('link', {
+      name: new RegExp(`D${chapters[0].number}.*${chapters[0].title}`, 'i'),
+    }),
+  ).toBeVisible();
 });
